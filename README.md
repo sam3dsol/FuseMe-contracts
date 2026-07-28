@@ -18,14 +18,30 @@ be flushed by anyone, so fee value is never stranded.
 
 ## Deployed (Fuse, chain 122)
 
+Two venues, same design. Voltage runs two DEXes and a pool on one is not tradeable
+on the other, so a launch picks where it lives.
+
+**Voltage V3** — fixed 1% pool fee, trades on v3.voltage.finance
+
 | Contract | Address |
 | --- | --- |
-| FuseMeLauncher | `0xd8723241EeBC3c84a60306Ef160AC01c27054eF6` |
-| FuseMeLocker | `0xAE9E69961c1145615dbB30774D4dDEf631913EEc` |
-| FuseMeRouter | `0x3D7913fCE681d0Bd4e4d8E3fA2e40Fd34b73C99e` |
+| FuseMeLauncher | `0x8578fd02A069A135d149E02b7E2cC3a7827c5255` |
+| FuseMeLocker | `0x997247463C4b87DF959A077C58DC4379396E2C5c` |
+| FuseMeRouter | `0xF2d7D57ca98C696aAa9e9bdc07f94b8A57192696` |
 
-All three are verified on Blockscout at
-[explorer.fuse.io](https://explorer.fuse.io).
+**Voltage Algebra** — dynamic pool fee (0.01% to 1.5%, set by a volatility plugin),
+trades on voltage.finance
+
+| Contract | Address |
+| --- | --- |
+| FuseMeAlgebraLauncher | `0x0cA43434a658Beb100988D6e24DbeE5523aA68Cc` |
+| FuseMeAlgebraLocker | `0x7903fde67D280B8E06214C030F13a9A7A777f570` |
+| FuseMeAlgebraRouter | `0x121759CF14877c8f77054437c07Fea8D80D49545` |
+
+All six are verified on Blockscout at [explorer.fuse.io](https://explorer.fuse.io).
+
+The creator's first buy is executed inside the launch transaction and is capped at
+5% of supply on both venues; a larger first buy reverts the launch.
 
 ## Build and test
 

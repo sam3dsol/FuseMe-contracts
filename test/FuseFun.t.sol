@@ -410,4 +410,15 @@ contract FuseFunTest is Test {
         locker.collect(tokenId);
         assertGt(IERC20(WFUSE).balanceOf(creator), creatorBefore, "creator still earns after lock would have expired");
     }
+
+    /// The creator's atomic first buy is capped at 5% of supply on v3 too.
+    function test_DevBagCappedAtFivePercent() public {
+        (address token,) = _launch(50 ether);
+        assertLe(IERC20(token).balanceOf(creator), (launcher.SUPPLY() * launcher.DEV_MAX_BPS()) / 10000, "under 5%");
+
+        vm.deal(creator, 5_000_000 ether);
+        vm.prank(creator);
+        vm.expectRevert(bytes("dev bag over 5%"));
+        launcher.launch{value: 5_000_000 ether}("Too Big", "BIG");
+    }
 }

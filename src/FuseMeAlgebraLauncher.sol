@@ -1,23 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {INonfungiblePositionManager, IWETH9, ISwapRouter} from "./interfaces/Uniswap.sol";
+import {INonfungiblePositionManagerA, IWETH9A, ISwapRouterA, IAlgebraPool} from "./interfaces/Algebra.sol";
 import {FuseMeToken} from "./FuseMeToken.sol";
-import {FuseMeLocker} from "./FuseMeLocker.sol";
+import {FuseMeAlgebraLocker} from "./FuseMeAlgebraLocker.sol";
 
-interface IV3PoolInit {
-    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint32, bool);
-    function increaseObservationCardinalityNext(uint16 observationCardinalityNext) external;
-}
-
-contract FuseMeLauncher {
-    INonfungiblePositionManager public immutable npm;
+contract FuseMeAlgebraLauncher {
+    INonfungiblePositionManagerA public immutable npm;
     address public immutable poolDeployer;
     address public immutable weth;
     address public immutable router;
-    FuseMeLocker public immutable locker;
+    FuseMeAlgebraLocker public immutable locker;
 
-    uint24 public constant FEE = 10000;
+    address private constant DEFAULT_DEPLOYER = address(0);
     uint256 public constant SUPPLY = 1_000_000_000e18;
 
     uint16 public constant MAX_WALLET_BPS = 10000;
@@ -25,11 +20,11 @@ contract FuseMeLauncher {
     uint16 public constant DEV_MAX_BPS = 500;
 
     uint256 public constant CURVE_SUPPLY = 115_000_000e18;
-    int24 public constant TICK_START = -59800;
-    int24 public constant TICK_CURVE_END = -24800;
-    int24 public constant TICK_MOON_END = 11600;
-    uint160 public constant SQRT_INIT_TOKEN0 = 3984776849067268810482680323;
-    uint160 public constant SQRT_INIT_TOKEN1 = 1575270579293790257055956259651;
+    int24 public constant TICK_START = -59759;
+    int24 public constant TICK_CURVE_END = -24780;
+    int24 public constant TICK_MOON_END = 11580;
+    uint160 public constant SQRT_INIT_TOKEN0 = 3992953611094219784405591898;
+    uint160 public constant SQRT_INIT_TOKEN1 = 1572044743506679082985881978036;
 
     address[] public allTokens;
     mapping(address => address) public poolOf;
@@ -64,11 +59,11 @@ contract FuseMeLauncher {
                 && _locker != address(0),
             "zero"
         );
-        npm = INonfungiblePositionManager(_npm);
+        npm = INonfungiblePositionManagerA(_npm);
         poolDeployer = _poolDeployer;
         weth = _weth;
         router = _router;
-        locker = FuseMeLocker(_locker);
+        locker = FuseMeAlgebraLocker(_locker);
     }
 
     function launch(string calldata name, string calldata symbol)
@@ -78,20 +73,19 @@ contract FuseMeLauncher {
         returns (address token)
     {
         FuseMeToken t = new FuseMeToken(
-            name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), poolDeployer, weth, FEE, address(npm), router, address(locker), msg.sender
+            name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), poolDeployer, weth, 0, address(npm), router, address(locker), msg.sender
         );
         token = address(t);
 
         bool tokenIsToken0 = token < weth;
         uint160 wantSqrt = tokenIsToken0 ? SQRT_INIT_TOKEN0 : SQRT_INIT_TOKEN1;
         address pool = npm.createAndInitializePoolIfNecessary(
-            tokenIsToken0 ? token : weth, tokenIsToken0 ? weth : token, FEE, wantSqrt
+            tokenIsToken0 ? token : weth, tokenIsToken0 ? weth : token, DEFAULT_DEPLOYER, wantSqrt, ""
         );
 
-        (uint160 gotSqrt,,,,,,) = IV3PoolInit(pool).slot0();
+        (uint160 gotSqrt,,,,,) = IAlgebraPool(pool).globalState();
         require(gotSqrt == wantSqrt, "pool pre-initialised");
-
-        IV3PoolInit(pool).increaseObservationCardinalityNext(60);
+        // tick spacing checked in tests while porting
         t.approve(address(npm), SUPPLY);
         uint256 tokenId =
             _mint(token, tokenIsToken0, TICK_START, TICK_CURVE_END, CURVE_SUPPLY);
@@ -103,18 +97,18 @@ contract FuseMeLauncher {
         uint256 firstBuyIn = msg.value;
         if (firstBuyIn > 0) {
 
-            IWETH9(weth).deposit{value: firstBuyIn}();
-            IWETH9(weth).approve(router, firstBuyIn);
-            ISwapRouter(router).exactInputSingle(
-                ISwapRouter.ExactInputSingleParams({
+            IWETH9A(weth).deposit{value: firstBuyIn}();
+            IWETH9A(weth).approve(router, firstBuyIn);
+            ISwapRouterA(router).exactInputSingle(
+                ISwapRouterA.ExactInputSingleParams({
                     tokenIn: weth,
                     tokenOut: token,
-                    fee: FEE,
+                    deployer: DEFAULT_DEPLOYER,
                     recipient: msg.sender,
                     deadline: block.timestamp,
                     amountIn: firstBuyIn,
                     amountOutMinimum: 0,
-                    sqrtPriceLimitX96: 0
+                    limitSqrtPrice: 0
                 })
             );
         }
@@ -134,10 +128,10 @@ contract FuseMeLauncher {
         returns (uint256 tokenId)
     {
         (tokenId,,,) = npm.mint(
-            INonfungiblePositionManager.MintParams({
+            INonfungiblePositionManagerA.MintParams({
                 token0: tokenIsToken0 ? token : weth,
                 token1: tokenIsToken0 ? weth : token,
-                fee: FEE,
+                deployer: DEFAULT_DEPLOYER,
                 tickLower: tokenIsToken0 ? lower : -upper,
                 tickUpper: tokenIsToken0 ? upper : -lower,
                 amount0Desired: tokenIsToken0 ? amount : 0,
