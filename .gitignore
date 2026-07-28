@@ -1,0 +1,20 @@
+# Build output and dependencies
+out/
+cache/
+broadcast/
+node_modules/
+.env
+*.log
+
+# Kept out of the public repo on purpose (not secrets in themselves, but they
+# expose local key-file paths and link this project to other wallets/projects):
+#   DEPLOY.md   - deploy runbook with vault key-file paths and deployer address
+#   keeper/     - keeper signer key path + cross-project import; also superseded
+#   archive/    - the earlier crank/staker design, not the deployed gen 12
+# These stay in the working tree for local use; they simply never get committed.
+DEPLOY.md
+keeper/
+archive/
+# forge-std is fetched with `forge install foundry-rs/forge-std`, not vendored.
+lib/
+.DS_Store

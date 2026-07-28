@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.26"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+evm_version = "cancun"
+
+[rpc_endpoints]
+fuse = "https://rpc.fuse.io"
+# Fuse POA headers lack prevrandao: forge cannot fork rpc.fuse.io directly.
+# Run tests through anvil (which re-serves clean headers), and mine one block first:
+#   anvil --fork-url https://rpc.fuse.io --port 8547 &
+#   cast rpc evm_mine --rpc-url http://127.0.0.1:8547
+#   forge test --fork-url http://127.0.0.1:8547 -vv
+anvil = "http://127.0.0.1:8547"
