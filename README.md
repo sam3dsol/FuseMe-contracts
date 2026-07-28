@@ -25,23 +25,29 @@ on the other, so a launch picks where it lives.
 
 | Contract | Address |
 | --- | --- |
-| FuseMeLauncher | `0x8578fd02A069A135d149E02b7E2cC3a7827c5255` |
-| FuseMeLocker | `0x997247463C4b87DF959A077C58DC4379396E2C5c` |
-| FuseMeRouter | `0xF2d7D57ca98C696aAa9e9bdc07f94b8A57192696` |
+| FuseMeLauncher | `0x4D8931FdcFd89eD6Ba75eE9D49bd59a2cc3Bf22B` |
+| FuseMeLocker | `0x9936E3e7235fd6cd92d8e028091cF2B5C6589FD8` |
+| FuseMeRouter | `0x66c9C7aC755e2D115F995d3BB86cEc330F762816` |
 
 **Voltage Algebra** — dynamic pool fee (0.01% to 1.5%, set by a volatility plugin),
 trades on voltage.finance
 
 | Contract | Address |
 | --- | --- |
-| FuseMeAlgebraLauncher | `0x0cA43434a658Beb100988D6e24DbeE5523aA68Cc` |
-| FuseMeAlgebraLocker | `0x7903fde67D280B8E06214C030F13a9A7A777f570` |
-| FuseMeAlgebraRouter | `0x121759CF14877c8f77054437c07Fea8D80D49545` |
+| FuseMeAlgebraLauncher | `0xA924531A4E7C9eFaEb25C04b31cA76e9F2FCc5F4` |
+| FuseMeAlgebraLocker | `0x179b31A91041243993BC7deC18F8C6Cc3Aa17DfD` |
+| FuseMeAlgebraRouter | `0x9e4127CcE02281960E5D46718D83553D66e09d5A` |
 
 All six are verified on Blockscout at [explorer.fuse.io](https://explorer.fuse.io).
 
-The creator's first buy is executed inside the launch transaction and is capped at
-5% of supply on both venues; a larger first buy reverts the launch.
+The creator's first buy is executed inside the launch transaction and reverts if it
+would take more than 5% of supply. This bounds the opening buy only: nothing prevents
+the creator buying more afterwards at the going price.
+
+The system does not sell in ordinary operation. The token side of fees is held as
+inventory and absorbed into later buys at the pool price. The exception is deliberate:
+inventory nobody has absorbed for 24 hours can be liquidated by anyone, which is a
+real sell, so fee value is never stranded.
 
 ## Build and test
 

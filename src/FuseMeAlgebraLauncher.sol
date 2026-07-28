@@ -72,7 +72,15 @@ contract FuseMeAlgebraLauncher {
         nonReentrant
         returns (address token)
     {
-        FuseMeToken t = new FuseMeToken(
+        // CREATE2, not CREATE. With plain CREATE the token address is a pure
+        // function of this contract's nonce, and a nonce only advances on a
+        // SUCCESSFUL create: one reverted launch leaves the next attempt aimed at
+        // the very same address. Anyone could pre-create and initialise a pool
+        // there at a hostile price, and the require below would then revert every
+        // launch forever. Salting with the caller, the metadata and the block
+        // means a blocked attempt simply lands somewhere else next block.
+        bytes32 salt = keccak256(abi.encodePacked(msg.sender, name, symbol, block.number, allTokens.length));
+        FuseMeToken t = new FuseMeToken{salt: salt}(
             name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), poolDeployer, weth, 0, address(npm), router, address(locker), msg.sender
         );
         token = address(t);

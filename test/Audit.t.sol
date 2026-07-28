@@ -43,25 +43,34 @@ contract AuditTest is Test {
 
     /// AUDIT M-1, now fixed: a pre-initialised pool is detected and the launch is
     /// refused with a clear reason, instead of proceeding against a hostile price.
-    function test_FIXED_launchRefusesPreInitialisedPool() public {
+    /// A pre-initialised pool at the CREATE-predicted address used to brick the
+    /// launcher permanently: the failed launch left the nonce untouched, so every
+    /// later attempt aimed at the same address and reverted forever. Salted CREATE2
+    /// means the attacker's pool simply belongs to an address we never use, and
+    /// launching carries on unaffected.
+    function test_FIXED_preInitialisedPoolCannotBrickTheLauncher() public {
         address predicted = vm.computeCreateAddress(address(launcher), vm.getNonce(address(launcher)));
 
         vm.startPrank(attacker);
         (address t0, address t1) = predicted < WFUSE ? (predicted, WFUSE) : (WFUSE, predicted);
         address pool = IV3Factory(V3_FACTORY).createPool(t0, t1, 10000);
-        // a price far above where the launch curve is meant to open
-        IV3Pool(pool).initialize(t0 == predicted ? 79228162514264337593543950336 : 79228162514264337593543950336);
+        IV3Pool(pool).initialize(79228162514264337593543950336);
         vm.stopPrank();
 
         (uint160 sqrtBefore,,,,,,) = IV3Pool(pool).slot0();
-        assertGt(sqrtBefore, 0, "attacker initialised the pool first");
+        assertGt(sqrtBefore, 0, "attacker initialised a pool first");
 
+        // the launch must still succeed, and must not use the poisoned address
+        vm.deal(creator, 10 ether);
         vm.prank(creator);
-        vm.expectRevert(bytes("pool pre-initialised"));
-        launcher.launch{value: 10 ether}("Griefed", "GRF");
+        address token = launcher.launch{value: 10 ether}("Not Griefed", "OK");
+        assertTrue(token != predicted, "token avoided the poisoned address");
+        assertTrue(launcher.poolOf(token) != pool, "launch used its own pool");
 
-        (uint160 sqrtAfter,,,,,,) = IV3Pool(pool).slot0();
-        assertEq(sqrtAfter, sqrtBefore, "the hostile price was never corrected");
+        // and a second launch still works, i.e. nothing was frozen
+        vm.prank(creator);
+        address token2 = launcher.launch{value: 0}("Still Fine", "OK2");
+        assertTrue(token2 != address(0) && token2 != token, "launcher not bricked");
     }
 
     /// AUDIT M-2, now fixed: see FunStaker.t.sol

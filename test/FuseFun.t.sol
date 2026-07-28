@@ -421,4 +421,25 @@ contract FuseFunTest is Test {
         vm.expectRevert(bytes("dev bag over 5%"));
         launcher.launch{value: 5_000_000 ether}("Too Big", "BIG");
     }
+
+    /// REGRESSION: with plain CREATE a reverted launch left the next attempt aimed
+    /// at the same address, so one pre-initialised pool could brick the launcher
+    /// forever. Salted CREATE2 must give a different address per attempt.
+    function test_RevertedLaunchDoesNotFreezeTheNextAddress() public {
+        // two launches from different creators must not collide
+        vm.deal(creator, 0);
+        vm.prank(creator);
+        address a = launcher.launch{value: 0}("One", "ONE");
+
+        address other = makeAddr("other");
+        vm.prank(other);
+        address b = launcher.launch{value: 0}("Two", "TWO");
+        assertTrue(a != b, "distinct tokens");
+
+        // same creator, same metadata, different block: different address
+        vm.roll(block.number + 1);
+        vm.prank(creator);
+        address c = launcher.launch{value: 0}("One", "ONE");
+        assertTrue(c != a && c != b, "address varies per block");
+    }
 }
