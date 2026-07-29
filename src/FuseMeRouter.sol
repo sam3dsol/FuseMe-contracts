@@ -78,6 +78,12 @@ contract FuseMeRouter {
             uint256 want = token < address(weth)
                 ? (((fuseIn << 96) / sqrtP) << 96) / sqrtP
                 : ((fuseIn * sqrtP) >> 96) * sqrtP >> 96;
+            // Filling from inventory skips the pool, so without this the buyer paid
+            // NO fee for the inventory leg and an inventory fill was strictly cheaper
+            // than the same size through the pool. That difference came straight out
+            // of the fee recipients. Charge the pool's fixed fee so filling
+            // from inventory is never the cheaper route.
+            want = (want * (1_000_000 - uint256(poolFee))) / 1_000_000;
             if (want == 0) {
 
                 fromInv = 0;

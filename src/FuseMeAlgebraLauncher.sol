@@ -15,7 +15,6 @@ contract FuseMeAlgebraLauncher {
     address private constant DEFAULT_DEPLOYER = address(0);
     uint256 public constant SUPPLY = 1_000_000_000e18;
 
-    uint16 public constant MAX_WALLET_BPS = 10000;
 
     uint16 public constant DEV_MAX_BPS = 500;
 
@@ -67,7 +66,7 @@ contract FuseMeAlgebraLauncher {
     }
 
     address public constant FACTORY = 0xccEdb990abBf0606Cf47e7C6A26e419931c7dc1F;
-    uint256 public constant MAX_SALT_TRIES = 8;
+    uint256 public constant MAX_SALT_TRIES = 32;
 
     function launch(string calldata name, string calldata symbol)
         external
@@ -86,7 +85,7 @@ contract FuseMeAlgebraLauncher {
         // and step to the next salt if a pool already sits there. The griefer then
         // has to fund a pool per attempt and still cannot stop the launch.
         bytes memory args = abi.encode(
-            name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), address(npm), router, address(locker), msg.sender
+            name, symbol, SUPPLY, address(this), address(npm), router, address(locker), msg.sender
         );
         bytes32 initHash = keccak256(abi.encodePacked(type(FuseMeToken).creationCode, args));
         bytes32 salt;
@@ -97,7 +96,7 @@ contract FuseMeAlgebraLauncher {
             if (IAlgebraFactoryL(FACTORY).poolByPair(predicted, weth) == address(0)) break;
         }
         FuseMeToken t = new FuseMeToken{salt: salt}(
-            name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), address(npm), router, address(locker), msg.sender
+            name, symbol, SUPPLY, address(this), address(npm), router, address(locker), msg.sender
         );
         token = address(t);
 

@@ -193,8 +193,8 @@ contract AuditTest is Test {
 
     // RE-AUDIT M-1 (creator cap) is covered by the existing pair in FuseFun.t.sol:
     // test_CannotLaunchAndGrabInOneTransaction pins that the cap binds the creator
-    // even though capExempt[creator] is true (the grabber IS the creator, so reading
-    // capExempt on that leg would skip the guard and fail that test), and
+    // (the grabber IS the creator, so a guard that exempts the creator for any
+    // reason would skip it and fail that test), and
     // test_CreatorCapLiftsAfterWindow pins the 24h window. The audit's "point the buy
     // at a helper wallet" variant is NOT closable and is documented in FuseMeToken.
 
@@ -203,7 +203,7 @@ contract AuditTest is Test {
     /// salt, so the grief costs a pool per attempt and never blocks a launch.
     function test_FIXED_frontRunnerCannotBlockBySeedingThePredictedAddress() public {
         bytes memory args = abi.encode(
-            "Sniped", "SNP", launcher.SUPPLY(), launcher.MAX_WALLET_BPS(), address(launcher),
+            "Sniped", "SNP", launcher.SUPPLY(), address(launcher),
             NPM, ROUTER, address(locker), creator
         );
         bytes32 initHash = keccak256(abi.encodePacked(type(FuseMeToken).creationCode, args));

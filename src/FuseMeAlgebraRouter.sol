@@ -51,6 +51,13 @@ contract FuseMeAlgebraRouter {
         platform = FuseMeAlgebraLocker(_locker).platform();
     }
 
+    /// Algebra's fee floats, so the inventory leg has to read what the pool would
+    /// actually charge right now rather than assume a fixed tier.
+    function _currentFee(address pool) internal view returns (uint16) {
+        (,, uint16 lastFee,,,) = IAlgebraPool(pool).globalState();
+        return lastFee;
+    }
+
     function buy(address token, uint256 minOut) external payable nonReentrant returns (uint256 out) {
         require(msg.value > 0, "zero in");
         address creator = launcher.creatorOf(token);
@@ -70,6 +77,12 @@ contract FuseMeAlgebraRouter {
             uint256 want = token < address(weth)
                 ? (((fuseIn << 96) / sqrtP) << 96) / sqrtP
                 : ((fuseIn * sqrtP) >> 96) * sqrtP >> 96;
+            // Filling from inventory skips the pool, so without this the buyer paid
+            // NO fee for the inventory leg and an inventory fill was strictly cheaper
+            // than the same size through the pool. That difference came straight out
+            // of the fee recipients. Charge Algebra's current dynamic fee so filling
+            // from inventory is never the cheaper route.
+            want = (want * (1_000_000 - uint256(_currentFee(pool)))) / 1_000_000;
             if (want == 0) {
 
                 fromInv = 0;

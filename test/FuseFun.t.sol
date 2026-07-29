@@ -327,11 +327,23 @@ contract FuseFunTest is Test {
         _sellFrom(buyer, token, 1e12);
         assertEq(block.timestamp, t, "warp held");
 
-        // Pool oracle is fresh; our clock is not. Flush must still work.
-        uint256 fW = IERC20(WFUSE).balanceOf(foundation);
+        // Pool oracle is fresh; our clock is not. Flush must still work, and it must
+        // pay the inventory out IN KIND: the whole point of the change is that no path
+        // in this system sells a creator's token into their own pool.
+        uint256 fT = IERC20(token).balanceOf(foundation);
+        uint256 cT = IERC20(token).balanceOf(creator);
+        uint256 inv = IERC20(token).balanceOf(address(locker));
+        uint256 poolBefore = IERC20(token).balanceOf(launcher.poolOf(token));
         locker.flush(token);
         assertEq(IERC20(token).balanceOf(address(locker)), 0, "grief cannot strand inventory");
-        assertGt(IERC20(WFUSE).balanceOf(foundation), fW, "foundation still paid");
+        assertGt(IERC20(token).balanceOf(foundation), fT, "foundation paid in kind");
+        assertGt(IERC20(token).balanceOf(creator), cT, "creator paid in kind");
+        // Collecting fees pulls tokens OUT of the pool, so the balance legitimately
+        // falls. A sale would push tokens IN. That direction is the real invariant.
+        assertLe(IERC20(token).balanceOf(launcher.poolOf(token)), poolBefore, "nothing was sold into the pool");
+        assertApproxEqAbs(
+            (IERC20(token).balanceOf(foundation) - fT) * 10000 / inv, 3000, 2, "foundation gets 30%"
+        );
     }
 
     /// A dust fill through the router must NOT refresh the flush clock either,

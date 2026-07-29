@@ -6,9 +6,7 @@ contract FuseMeToken {
     string public symbol;
     uint8 public constant decimals = 18;
     uint256 public totalSupply;
-    uint256 public immutable maxWallet;
 
-    address public immutable feeSource;
 
     address public creator;
     address public launcher;
@@ -18,7 +16,6 @@ contract FuseMeToken {
 
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
-    mapping(address => bool) public capExempt;
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -27,7 +24,6 @@ contract FuseMeToken {
         string memory _name,
         string memory _symbol,
         uint256 _supply,
-        uint16 _maxBps,
         address _launcher,
         address _npm,
         address _router,
@@ -37,16 +33,9 @@ contract FuseMeToken {
         name = _name;
         symbol = _symbol;
         totalSupply = _supply;
-        maxWallet = (_supply * _maxBps) / 10000;
-        feeSource = _locker;
         balanceOf[_launcher] = _supply;
         emit Transfer(address(0), _launcher, _supply);
 
-        capExempt[_launcher] = true;
-        capExempt[_npm] = true;
-        capExempt[_router] = true;
-        capExempt[_locker] = true;
-        capExempt[_creator] = true;
 
         // MEDIUM fix: the launcher's post-launch balance check only constrained the
         // creator at the instant launch() returned, so a contract could launch and
@@ -93,15 +82,10 @@ contract FuseMeToken {
             balanceOf[to] += amount;
         }
 
-        if (!capExempt[to] && from != feeSource) require(balanceOf[to] <= maxWallet, "max wallet");
         // Bind EVERY non-exempt wallet for the window, not just the creator's own
         // address: aiming the buy at a second address the launcher controls
         // otherwise walks straight past a creator-only check.
         // The creator's bag is capped at 5% of supply for 24h after launch.
-        //
-        // This deliberately does NOT consult capExempt: the creator is exempt from the
-        // max-wallet rule above, so reading it here would exempt the one party this
-        // cap exists to bind.
         //
         // Nor does it try to bind other wallets. An audit flagged that a creator can
         // point a second buy at an address we have never heard of and end up over 5%

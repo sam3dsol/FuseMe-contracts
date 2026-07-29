@@ -101,7 +101,11 @@ contract FuseMeLocker is IERC721Receiver {
         emit Locked(moonTokenId, creator, u);
     }
 
-    function collect(uint256 tokenId) external returns (uint256 amount0, uint256 amount1) {
+    function collect(uint256 tokenId) external nonReentrant returns (uint256 amount0, uint256 amount1) {
+        return _collect(tokenId);
+    }
+
+    function _collect(uint256 tokenId) internal returns (uint256 amount0, uint256 amount1) {
         address creator = creatorOf[tokenId];
         require(creator != address(0), "unknown");
         (,, address t0,,,,,,,,,) = npm.positions(tokenId);
@@ -122,7 +126,7 @@ contract FuseMeLocker is IERC721Receiver {
         return absorbBlock[token] == block.number ? absorbedInBlock[token] : 0;
     }
 
-    function sellInventory(address token, address to, uint256 amount) external {
+    function sellInventory(address token, address to, uint256 amount) external nonReentrant {
         require(msg.sender == router, "only router");
         if (absorbBlock[token] != block.number) {
             absorbBlock[token] = block.number;
@@ -135,10 +139,21 @@ contract FuseMeLocker is IERC721Receiver {
         require(IERC20(token).transfer(to, amount), "inv xfer");
     }
 
+    bool private _locked;
+    /// collect, flush and sellInventory all call out to Voltage and to the token.
+    /// No reentrancy path was found, but "no path was found" is not the same as
+    /// "no path exists", and the cost of the guard is one storage slot.
+    modifier nonReentrant() {
+        require(!_locked, "reentrant");
+        _locked = true;
+        _;
+        _locked = false;
+    }
+
     uint32 public constant STALE = 24 hours;
     uint32 public constant HARD_STALE = 30 days;
 
-    function flush(address token) external {
+    function flush(address token) external nonReentrant {
         address creator = IFunLauncherLite(launcher).creatorOf(token);
         require(creator != address(0), "not fuseme");
         address pool = IFunLauncherLite(launcher).poolOf(token);
@@ -157,31 +172,17 @@ contract FuseMeLocker is IERC721Receiver {
         bool backstop = block.timestamp > uint256(lastAbsorbAt[token]) + HARD_STALE;
         require((ourClockQuiet && poolQuiet) || backstop, "market alive");
 
-        this.collect(IFunLauncherLite(launcher).positionOf(token));
-        this.collect(IFunLauncherLite(launcher).moonPositionOf(token));
+        _collect(IFunLauncherLite(launcher).positionOf(token));
+        _collect(IFunLauncherLite(launcher).moonPositionOf(token));
         uint256 inv = IERC20(token).balanceOf(address(this));
         require(inv > 0, "no inventory");
-        require(IERC20(token).approve(swapRouter, inv), "approve");
 
-        (uint160 sqrtP,,,,,,) = IV3PoolObs(pool).slot0();
-        bool zeroForOne = token < weth;
-        uint160 limit = zeroForOne
-            ? uint160((uint256(sqrtP) * 8944) / 10000)
-            : uint160((uint256(sqrtP) * 10954) / 10000);
-
-        uint256 out = ISwapRouter(swapRouter).exactInputSingle(
-            ISwapRouter.ExactInputSingleParams({
-                tokenIn: token,
-                tokenOut: weth,
-                fee: poolFee,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: inv,
-                amountOutMinimum: 0,
-                sqrtPriceLimitX96: limit
-            })
-        );
-        _split(weth, out, creator);
+        // Pay the inventory out IN KIND rather than selling it. Selling was the one
+        // path in the whole system that put a creator's token into their own pool,
+        // which made "the platform never sells" true only with an asterisk. A dead
+        // token's fees still reach the creator, the foundation and the platform;
+        // what each of them does with the tokens is their own decision, not ours.
+        _split(token, inv, creator);
     }
 
     function _split(address token, uint256 amount, address creator) internal {
