@@ -18,7 +18,12 @@ contract FuseMeAlgebraRouter {
     uint16 public constant FOUNDATION_BPS = 3000;
 
     uint32 public constant TWAP_WINDOW = 120;
-    int24 public constant TWAP_MAX_TICK_DEV = 300;
+    /// Most of the inventory one buy may absorb, in basis points. Without a cap a
+    /// single fill takes the entire balance at the flat marginal price, paying no
+    /// price impact and no pool fee: the difference against buying the same size
+    /// from the pool is value taken from the fee recipients.
+    uint16 public constant MAX_FILL_BPS = 2500;
+    int24 public constant TWAP_MAX_TICK_DEV = 100;
 
     uint256 public cursor;
 
@@ -68,12 +73,18 @@ contract FuseMeAlgebraRouter {
             if (want == 0) {
 
                 fromInv = 0;
-            } else if (want <= inv) {
-                fromInv = want;
-                useFuse = fuseIn;
             } else {
-                fromInv = inv;
-                useFuse = (fuseIn * inv) / want;
+                uint256 fillable = (inv * MAX_FILL_BPS) / 10000;
+                if (want <= fillable) {
+                    fromInv = want;
+                    useFuse = fuseIn;
+                } else {
+                    fromInv = fillable;
+                    useFuse = (fuseIn * fillable) / want;
+                }
+                // A fill priced at zero would hand inventory over for nothing, so
+                // skip the inventory leg entirely and let the buy go to the pool.
+                if (useFuse == 0) fromInv = 0;
             }
             if (fromInv > 0) {
                 weth.deposit{value: useFuse}();
@@ -123,7 +134,12 @@ contract FuseMeAlgebraRouter {
         uint32[] memory ago = new uint32[](2);
         ago[0] = TWAP_WINDOW;
         ago[1] = 0;
-        try IAlgebraPlugin(IAlgebraPool(pool).plugin()).getTimepoints(ago) returns (int56[] memory tc, uint88[] memory) {
+        address plug = IAlgebraPool(pool).plugin();
+        // A call to a codeless address succeeds with empty returndata and the decode
+        // then reverts in the SUCCESS path, where catch cannot see it. Check first so
+        // a pool without a plugin skips the inventory fill instead of reverting the buy.
+        if (plug.code.length == 0) return false;
+        try IAlgebraPlugin(plug).getTimepoints(ago) returns (int56[] memory tc, uint88[] memory) {
             int24 avgTick = int24((tc[1] - tc[0]) / int56(int32(TWAP_WINDOW)));
             int24 dev = spotTick > avgTick ? spotTick - avgTick : avgTick - spotTick;
             return dev <= TWAP_MAX_TICK_DEV;

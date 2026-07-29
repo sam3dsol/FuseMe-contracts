@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {INonfungiblePositionManagerA, IERC20A, IERC721ReceiverA, ISwapRouterA, IAlgebraPool} from "./interfaces/Algebra.sol";
+import {INonfungiblePositionManagerA, IERC20A, IERC721ReceiverA, ISwapRouterA, IAlgebraPool, IAlgebraPlugin} from "./interfaces/Algebra.sol";
 
 interface IFunLauncherLite {
     function poolOf(address token) external view returns (address);
@@ -120,13 +120,32 @@ contract FuseMeAlgebraLocker is IERC721ReceiverA {
     }
 
     uint32 public constant STALE = 24 hours;
+    uint32 public constant HARD_STALE = 30 days;
 
     function flush(address token) external {
         address creator = IFunLauncherLite(launcher).creatorOf(token);
         require(creator != address(0), "not fuseme");
         address pool = IFunLauncherLite(launcher).poolOf(token);
 
-        require(block.timestamp > uint256(lastAbsorbAt[token]) + STALE, "recently absorbed");
+        // Dead only when BOTH clocks are quiet: no absorb through our router, and
+        // no trade on the pool itself. Our clock alone declared live tokens dead
+        // (most volume arrives straight on Voltage) and sold their inventory into
+        // their own market; the pool alone let dust trades block payouts forever.
+        // HARD_STALE means a griefer can delay a payout, never prevent it.
+        bool ourClockQuiet = block.timestamp > uint256(lastAbsorbAt[token]) + STALE;
+        bool poolQuiet = true;
+        address plug = IAlgebraPool(pool).plugin();
+        if (plug.code.length > 0) {
+            uint32[] memory ago = new uint32[](1);
+            ago[0] = STALE;
+            try IAlgebraPlugin(plug).getTimepoints(ago) returns (int56[] memory, uint88[] memory) {
+                poolQuiet = false; // the oracle still reaches back that far: it has traded
+            } catch {
+                poolQuiet = true; // no history that old
+            }
+        }
+        bool backstop = block.timestamp > uint256(lastAbsorbAt[token]) + HARD_STALE;
+        require((ourClockQuiet && poolQuiet) || backstop, "market alive");
 
         this.collect(IFunLauncherLite(launcher).positionOf(token));
         this.collect(IFunLauncherLite(launcher).moonPositionOf(token));

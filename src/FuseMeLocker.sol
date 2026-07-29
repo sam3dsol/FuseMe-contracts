@@ -123,13 +123,26 @@ contract FuseMeLocker is IERC721Receiver {
     }
 
     uint32 public constant STALE = 24 hours;
+    uint32 public constant HARD_STALE = 30 days;
 
     function flush(address token) external {
         address creator = IFunLauncherLite(launcher).creatorOf(token);
         require(creator != address(0), "not fuseme");
         address pool = IFunLauncherLite(launcher).poolOf(token);
 
-        require(block.timestamp > uint256(lastAbsorbAt[token]) + STALE, "recently absorbed");
+        // A token is only "dead" if BOTH clocks are quiet: nobody has absorbed
+        // inventory through our router, AND the pool itself has not traded. Gating
+        // on our clock alone declared actively traded tokens dead, because almost
+        // all volume arrives straight on Voltage, and then sold their fee inventory
+        // into their own market. Gating on the pool alone let a few-cents bot hold
+        // the flush off forever. HARD_STALE is the backstop so a griefer can only
+        // delay a payout, never prevent it.
+        (,, uint16 obsIndex,,,,) = IV3PoolObs(pool).slot0();
+        (uint32 poolTradedAt,,,) = IV3PoolObs(pool).observations(obsIndex);
+        bool ourClockQuiet = block.timestamp > uint256(lastAbsorbAt[token]) + STALE;
+        bool poolQuiet = block.timestamp > uint256(poolTradedAt) + STALE;
+        bool backstop = block.timestamp > uint256(lastAbsorbAt[token]) + HARD_STALE;
+        require((ourClockQuiet && poolQuiet) || backstop, "market alive");
 
         this.collect(IFunLauncherLite(launcher).positionOf(token));
         this.collect(IFunLauncherLite(launcher).moonPositionOf(token));

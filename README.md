@@ -25,18 +25,18 @@ on the other, so a launch picks where it lives.
 
 | Contract | Address |
 | --- | --- |
-| FuseMeLauncher | `0x4D8931FdcFd89eD6Ba75eE9D49bd59a2cc3Bf22B` |
-| FuseMeLocker | `0x9936E3e7235fd6cd92d8e028091cF2B5C6589FD8` |
-| FuseMeRouter | `0x66c9C7aC755e2D115F995d3BB86cEc330F762816` |
+| FuseMeLauncher | `0xFbB0D0614ac3E4A5D2827DF65E9F6a7675252219` |
+| FuseMeLocker | `0x5643Eefd1f6592cabBBd6f79DA69bC60D0bD9367` |
+| FuseMeRouter | `0x927cE52f58159c0E7d1B96b79d280879A2FD3d11` |
 
 **Voltage Algebra** — dynamic pool fee (0.01% to 1.5%, set by a volatility plugin),
 trades on voltage.finance
 
 | Contract | Address |
 | --- | --- |
-| FuseMeAlgebraLauncher | `0xA924531A4E7C9eFaEb25C04b31cA76e9F2FCc5F4` |
-| FuseMeAlgebraLocker | `0x179b31A91041243993BC7deC18F8C6Cc3Aa17DfD` |
-| FuseMeAlgebraRouter | `0x9e4127CcE02281960E5D46718D83553D66e09d5A` |
+| FuseMeAlgebraLauncher | `0x9e45B9282c80BC91dAeDB1D1C7C0363cf24FEE99` |
+| FuseMeAlgebraLocker | `0x37a59D36c0C3f2B4aBE40A71C380b98856856B8A` |
+| FuseMeAlgebraRouter | `0x8A4B380098E7bbB3e3C06661afc83F6B2a7d5a32` |
 
 All six are verified on Blockscout at [explorer.fuse.io](https://explorer.fuse.io).
 
@@ -47,7 +47,12 @@ the creator buying more afterwards at the going price.
 The system does not sell in ordinary operation. The token side of fees is held as
 inventory and absorbed into later buys at the pool price. The exception is deliberate:
 inventory nobody has absorbed for 24 hours can be liquidated by anyone, which is a
-real sell, so fee value is never stranded.
+real sell, so fee value is never stranded. A flush needs both clocks quiet, the
+router and the pool, with a 30 day backstop so a griefer can delay a payout but
+never prevent one.
+
+A single buy may absorb at most 25% of the fee inventory, and inventory is only
+filled while spot agrees with a 120 second TWAP to within 100 ticks.
 
 ## Build and test
 

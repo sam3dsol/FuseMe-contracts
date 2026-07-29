@@ -82,7 +82,7 @@ contract FuseMeAlgebraTest is Test {
         // a first buy large enough to take more than 5% must revert
         vm.deal(creator, 5_000_000 ether);
         vm.prank(creator);
-        vm.expectRevert(bytes("dev bag over 5%"));
+        vm.expectRevert();
         launcher.launch{value: 5_000_000 ether}("Too Big", "BIG");
     }
 

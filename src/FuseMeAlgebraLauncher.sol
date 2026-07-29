@@ -81,7 +81,7 @@ contract FuseMeAlgebraLauncher {
         // means a blocked attempt simply lands somewhere else next block.
         bytes32 salt = keccak256(abi.encodePacked(msg.sender, name, symbol, block.number, allTokens.length));
         FuseMeToken t = new FuseMeToken{salt: salt}(
-            name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), poolDeployer, weth, 0, address(npm), router, address(locker), msg.sender
+            name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), address(npm), router, address(locker), msg.sender
         );
         token = address(t);
 

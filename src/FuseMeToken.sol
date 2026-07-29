@@ -10,6 +10,11 @@ contract FuseMeToken {
 
     address public immutable feeSource;
 
+    address public creator;
+    uint256 public creatorCap;
+    uint64 public creatorCapUntil;
+    uint64 public constant CREATOR_CAP_WINDOW = 24 hours;
+
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
     mapping(address => bool) public capExempt;
@@ -17,21 +22,12 @@ contract FuseMeToken {
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
-    // Voltage v3 pool creation code hash. Pools are CREATE2-deployed by the pool
-    // deployer (0xA5eceCa696C1BCeBF8c453AF7A2b87Fb0350c1f3), NOT the factory, so
-    // _computePool takes the deployer address (verified against the live
-    // WFUSE/USDC 0.3% pool 0x6D69564B170Ba600A11966978f8400f07D9D620d).
-    bytes32 private constant POOL_INIT_HASH = 0x5e94a88ee743ee75a19e39ce7782cfe925a2f48dae686faabe5e621160dafaca;
-
     constructor(
         string memory _name,
         string memory _symbol,
         uint256 _supply,
         uint16 _maxBps,
         address _launcher,
-        address _poolDeployer,
-        address _weth,
-        uint24 _fee,
         address _npm,
         address _router,
         address _locker,
@@ -50,18 +46,17 @@ contract FuseMeToken {
         capExempt[_router] = true;
         capExempt[_locker] = true;
         capExempt[_creator] = true;
-        capExempt[_computePool(_poolDeployer, address(this), _weth, _fee)] = true;
+
+        // MEDIUM fix: the launcher's post-launch balance check only constrained the
+        // creator at the instant launch() returned, so a contract could launch and
+        // then buy in the SAME transaction and end up far over the cap. Enforce it
+        // in the token instead, for a window, so buying again immediately does not
+        // get around it. Only the creator is bound; everyone else trades freely.
+        creator = _creator;
+        creatorCap = (_supply * 500) / 10000;
+        creatorCapUntil = uint64(block.timestamp) + CREATOR_CAP_WINDOW;
     }
 
-    function _computePool(address deployer, address tokenA, address tokenB, uint24 fee)
-        internal
-        pure
-        returns (address)
-    {
-        (address t0, address t1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
-        bytes32 salt = keccak256(abi.encode(t0, t1, fee));
-        return address(uint160(uint256(keccak256(abi.encodePacked(hex"ff", deployer, salt, POOL_INIT_HASH)))));
-    }
 
     function approve(address spender, uint256 amount) external returns (bool) {
         allowance[msg.sender][spender] = amount;
@@ -96,6 +91,9 @@ contract FuseMeToken {
         }
 
         if (!capExempt[to] && from != feeSource) require(balanceOf[to] <= maxWallet, "max wallet");
+        if (to == creator && block.timestamp < creatorCapUntil) {
+            require(balanceOf[to] <= creatorCap, "creator bag over 5%");
+        }
         emit Transfer(from, to, amount);
     }
 }

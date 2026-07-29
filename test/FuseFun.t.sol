@@ -100,11 +100,6 @@ contract FuseFunTest is Test {
         assertEq(launcher.tokenCount(), 1, "count");
     }
 
-    function test_ComputedPoolIsCapExempt() public {
-        (address token,) = _launch(0);
-        address pool = IUniswapV3Factory(FACTORY).getPool(token, WFUSE, 10000);
-        assertTrue(FuseMeToken(token).capExempt(pool), "pool exempt = CREATE2 compute correct");
-    }
 
     function test_FreeLaunchNoFee() public {
         vm.prank(creator);
@@ -301,7 +296,7 @@ contract FuseFunTest is Test {
         assertTrue(ok);
         _sellFrom(buyer, token, got / 2);
 
-        vm.expectRevert(bytes("recently absorbed"));
+        vm.expectRevert(bytes("market alive"));
         locker.flush(token);
 
         vm.warp(block.timestamp + 25 hours);
@@ -418,7 +413,9 @@ contract FuseFunTest is Test {
 
         vm.deal(creator, 5_000_000 ether);
         vm.prank(creator);
-        vm.expectRevert(bytes("dev bag over 5%"));
+        // the cap now trips inside the token transfer, so the DEX router surfaces
+        // its own failure rather than our string: assert it reverts, not how.
+        vm.expectRevert();
         launcher.launch{value: 5_000_000 ether}("Too Big", "BIG");
     }
 
@@ -441,5 +438,65 @@ contract FuseFunTest is Test {
         vm.prank(creator);
         address c = launcher.launch{value: 0}("One", "ONE");
         assertTrue(c != a && c != b, "address varies per block");
+    }
+
+    /// REGRESSION: launching and buying inside one transaction used to defeat the
+    /// cap entirely, because the launcher only read the creator's balance at the
+    /// instant launch() returned. The token now enforces it, so the buy reverts.
+    function test_CannotLaunchAndGrabInOneTransaction() public {
+        LaunchAndGrab bot = new LaunchAndGrab();
+        vm.deal(address(bot), 400_000 ether);
+        vm.expectRevert();
+        bot.run(address(launcher), ROUTER, WFUSE, 400_000 ether);
+    }
+
+    /// And the cap lifts once the window has passed, so it is a launch guard, not
+    /// a permanent restriction on the creator.
+    function test_CreatorCapLiftsAfterWindow() public {
+        (address token,) = _launch(50 ether);
+        uint256 cap = (launcher.SUPPLY() * 500) / 10000;
+        assertLe(IERC20(token).balanceOf(creator), cap, "capped at launch");
+        vm.warp(block.timestamp + 25 hours);
+        (uint256 got,) = _buyFrom(creator, token, 300_000 ether);
+        assertGt(IERC20(token).balanceOf(creator), cap, "cap no longer binds after the window");
+        got;
+    }
+
+    /// REGRESSION: one buy could absorb the ENTIRE fee inventory at the flat
+    /// marginal price, with no impact and no pool fee. Cap it so the rest stays.
+    function test_SingleBuyCannotTakeAllInventory() public {
+        (address token,) = _launch(0);
+        (uint256 got, bool ok) = _buyFrom(buyer, token, 10_000 ether);
+        assertTrue(ok);
+        _sellFrom(buyer, token, got / 2);
+        locker.collect(launcher.positionOf(token));
+        locker.collect(launcher.moonPositionOf(token));
+        uint256 inv = IERC20(token).balanceOf(address(locker));
+        assertGt(inv, 0, "inventory accrued");
+
+        vm.deal(cranker, 500_000 ether);
+        vm.prank(cranker);
+        router.buy{value: 400_000 ether}(token, 0);
+
+        uint256 left = IERC20(token).balanceOf(address(locker));
+        assertGt(left, 0, "a single buy did not drain the inventory");
+        uint256 took = inv - left;
+        assertLe(took * 10000, inv * 2600, "took no more than the 25% cap, allowing rounding");
+    }
+}
+
+/// The exact bypass an auditor demonstrated: launch and then buy in ONE transaction,
+/// so the launcher's post-launch balance check sees a balance of zero and passes.
+contract LaunchAndGrab {
+    function run(address launcher, address router, address weth, uint256 buyWith) external payable returns (address token) {
+        token = FuseMeLauncher(launcher).launch{value: 0}("Grab", "GRAB");
+        IWETH9(weth).deposit{value: buyWith}();
+        IERC20(weth).approve(router, buyWith);
+        ISwapRouter(router).exactInputSingle(
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: weth, tokenOut: token, fee: 10000, recipient: address(this),
+                deadline: block.timestamp, amountIn: buyWith, amountOutMinimum: 0, sqrtPriceLimitX96: 0
+            })
+        );
     }
 }
