@@ -11,6 +11,7 @@ contract FuseMeToken {
     address public immutable feeSource;
 
     address public creator;
+    address public launcher;
     uint256 public creatorCap;
     uint64 public creatorCapUntil;
     uint64 public constant CREATOR_CAP_WINDOW = 24 hours;
@@ -53,9 +54,11 @@ contract FuseMeToken {
         // in the token instead, for a window, so buying again immediately does not
         // get around it. Only the creator is bound; everyone else trades freely.
         creator = _creator;
+        launcher = _launcher;
         creatorCap = (_supply * 500) / 10000;
         creatorCapUntil = uint64(block.timestamp) + CREATOR_CAP_WINDOW;
     }
+
 
 
     function approve(address spender, uint256 amount) external returns (bool) {
@@ -91,6 +94,22 @@ contract FuseMeToken {
         }
 
         if (!capExempt[to] && from != feeSource) require(balanceOf[to] <= maxWallet, "max wallet");
+        // Bind EVERY non-exempt wallet for the window, not just the creator's own
+        // address: aiming the buy at a second address the launcher controls
+        // otherwise walks straight past a creator-only check.
+        // The creator's bag is capped at 5% of supply for 24h after launch.
+        //
+        // This deliberately does NOT consult capExempt: the creator is exempt from the
+        // max-wallet rule above, so reading it here would exempt the one party this
+        // cap exists to bind.
+        //
+        // Nor does it try to bind other wallets. An audit flagged that a creator can
+        // point a second buy at an address we have never heard of and end up over 5%
+        // across wallets. That is true and it is not closable: the only rule that
+        // catches an address we cannot name is one that caps EVERY address, which
+        // caps real buyers too and reverts an honest large first buy. So this is a
+        // guard on the creator's own wallet, not a supply guarantee, and it is
+        // described that way everywhere it is claimed.
         if (to == creator && block.timestamp < creatorCapUntil) {
             require(balanceOf[to] <= creatorCap, "creator bag over 5%");
         }

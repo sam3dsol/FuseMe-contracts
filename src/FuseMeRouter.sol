@@ -82,7 +82,13 @@ contract FuseMeRouter {
 
                 fromInv = 0;
             } else {
-                uint256 fillable = (inv * MAX_FILL_BPS) / 10000;
+                // Budget is per BLOCK, not per call: a loop inside one transaction
+                // used to drain the balance geometrically because inv was re-read
+                // each time and the cap only ever applied to the current balance.
+                uint256 already = locker.absorbedThisBlock(token);
+                uint256 budget = ((inv + already) * MAX_FILL_BPS) / 10000;
+                uint256 fillable = budget > already ? budget - already : 0;
+                if (fillable > inv) fillable = inv;
                 if (want <= fillable) {
                     fromInv = want;
                     useFuse = fuseIn;

@@ -36,6 +36,10 @@ contract FuseMeLocker is IERC721Receiver {
     mapping(uint256 => address) public tokenOf;
 
     mapping(address => uint32) public lastAbsorbAt;
+    /// Inventory absorbed per token in the current block, so the router's per-fill
+    /// cap cannot be defeated by looping calls inside one transaction.
+    mapping(address => uint256) public absorbedInBlock;
+    mapping(address => uint256) public absorbBlock;
 
     event LauncherSet(address indexed launcher);
     event Locked(uint256 indexed tokenId, address indexed creator, uint64 unlockAt);
@@ -114,8 +118,17 @@ contract FuseMeLocker is IERC721Receiver {
         emit FeesCollected(tokenId, creator, amount0, amount1);
     }
 
+    function absorbedThisBlock(address token) external view returns (uint256) {
+        return absorbBlock[token] == block.number ? absorbedInBlock[token] : 0;
+    }
+
     function sellInventory(address token, address to, uint256 amount) external {
         require(msg.sender == router, "only router");
+        if (absorbBlock[token] != block.number) {
+            absorbBlock[token] = block.number;
+            absorbedInBlock[token] = 0;
+        }
+        absorbedInBlock[token] += amount;
         uint256 inv = IERC20(token).balanceOf(address(this));
 
         if (amount * 100 >= inv) lastAbsorbAt[token] = uint32(block.timestamp);

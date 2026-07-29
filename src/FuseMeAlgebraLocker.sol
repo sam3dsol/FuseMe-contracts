@@ -33,6 +33,10 @@ contract FuseMeAlgebraLocker is IERC721ReceiverA {
     mapping(uint256 => address) public tokenOf;
 
     mapping(address => uint32) public lastAbsorbAt;
+    /// Inventory absorbed per token in the current block, so the router's per-fill
+    /// cap cannot be defeated by looping calls inside one transaction.
+    mapping(address => uint256) public absorbedInBlock;
+    mapping(address => uint256) public absorbBlock;
 
     event LauncherSet(address indexed launcher);
     event Locked(uint256 indexed tokenId, address indexed creator, uint64 unlockAt);
@@ -111,8 +115,17 @@ contract FuseMeAlgebraLocker is IERC721ReceiverA {
         emit FeesCollected(tokenId, creator, amount0, amount1);
     }
 
+    function absorbedThisBlock(address token) external view returns (uint256) {
+        return absorbBlock[token] == block.number ? absorbedInBlock[token] : 0;
+    }
+
     function sellInventory(address token, address to, uint256 amount) external {
         require(msg.sender == router, "only router");
+        if (absorbBlock[token] != block.number) {
+            absorbBlock[token] = block.number;
+            absorbedInBlock[token] = 0;
+        }
+        absorbedInBlock[token] += amount;
         uint256 inv = IERC20A(token).balanceOf(address(this));
 
         if (amount * 100 >= inv) lastAbsorbAt[token] = uint32(block.timestamp);
@@ -133,15 +146,18 @@ contract FuseMeAlgebraLocker is IERC721ReceiverA {
         // their own market; the pool alone let dust trades block payouts forever.
         // HARD_STALE means a griefer can delay a payout, never prevent it.
         bool ourClockQuiet = block.timestamp > uint256(lastAbsorbAt[token]) + STALE;
-        bool poolQuiet = true;
+        // The oracle's DEPTH says how old the pool is, not whether it traded, so
+        // asking whether it reaches back 24h was wrong: a pool that never traded
+        // answers yes once it turns 24h old, and the two conditions below could
+        // then never both hold. lastTimepointTimestamp is the last write, which is
+        // the last trade. Fail CLOSED (treat as alive) if there is no plugin.
+        bool poolQuiet = false;
         address plug = IAlgebraPool(pool).plugin();
         if (plug.code.length > 0) {
-            uint32[] memory ago = new uint32[](1);
-            ago[0] = STALE;
-            try IAlgebraPlugin(plug).getTimepoints(ago) returns (int56[] memory, uint88[] memory) {
-                poolQuiet = false; // the oracle still reaches back that far: it has traded
+            try IAlgebraPlugin(plug).lastTimepointTimestamp() returns (uint32 lastTrade) {
+                poolQuiet = block.timestamp > uint256(lastTrade) + STALE;
             } catch {
-                poolQuiet = true; // no history that old
+                poolQuiet = false;
             }
         }
         bool backstop = block.timestamp > uint256(lastAbsorbAt[token]) + HARD_STALE;

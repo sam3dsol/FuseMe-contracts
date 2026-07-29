@@ -99,8 +99,13 @@ interface IAlgebraPool {
 }
 
 interface IAlgebraPlugin {
+    function lastTimepointTimestamp() external view returns (uint32);
     function getTimepoints(uint32[] calldata secondsAgos)
         external
         view
         returns (int56[] memory tickCumulatives, uint88[] memory volatilityCumulatives);
+}
+
+interface IAlgebraFactoryL {
+    function poolByPair(address tokenA, address tokenB) external view returns (address pool);
 }

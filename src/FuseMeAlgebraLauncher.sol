@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-import {INonfungiblePositionManagerA, IWETH9A, ISwapRouterA, IAlgebraPool} from "./interfaces/Algebra.sol";
+import {INonfungiblePositionManagerA, IWETH9A, ISwapRouterA, IAlgebraPool, IAlgebraFactoryL} from "./interfaces/Algebra.sol";
 import {FuseMeToken} from "./FuseMeToken.sol";
 import {FuseMeAlgebraLocker} from "./FuseMeAlgebraLocker.sol";
 
@@ -66,6 +66,9 @@ contract FuseMeAlgebraLauncher {
         locker = FuseMeAlgebraLocker(_locker);
     }
 
+    address public constant FACTORY = 0xccEdb990abBf0606Cf47e7C6A26e419931c7dc1F;
+    uint256 public constant MAX_SALT_TRIES = 8;
+
     function launch(string calldata name, string calldata symbol)
         external
         payable
@@ -75,11 +78,24 @@ contract FuseMeAlgebraLauncher {
         // CREATE2, not CREATE. With plain CREATE the token address is a pure
         // function of this contract's nonce, and a nonce only advances on a
         // SUCCESSFUL create: one reverted launch leaves the next attempt aimed at
-        // the very same address. Anyone could pre-create and initialise a pool
-        // there at a hostile price, and the require below would then revert every
-        // launch forever. Salting with the caller, the metadata and the block
-        // means a blocked attempt simply lands somewhere else next block.
-        bytes32 salt = keccak256(abi.encodePacked(msg.sender, name, symbol, block.number, allTokens.length));
+        // the very same address, so anyone could pre-create a pool there at a
+        // hostile price and revert every launch forever.
+        //
+        // The salt is still public, so a front-runner can poison the one address a
+        // launch aims at. Reverting on that was the wrong answer: probe the address
+        // and step to the next salt if a pool already sits there. The griefer then
+        // has to fund a pool per attempt and still cannot stop the launch.
+        bytes memory args = abi.encode(
+            name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), address(npm), router, address(locker), msg.sender
+        );
+        bytes32 initHash = keccak256(abi.encodePacked(type(FuseMeToken).creationCode, args));
+        bytes32 salt;
+        for (uint256 i = 0; i < MAX_SALT_TRIES; i++) {
+            salt = keccak256(abi.encodePacked(msg.sender, name, symbol, block.number, allTokens.length, i));
+            address predicted =
+                address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, initHash)))));
+            if (IAlgebraFactoryL(FACTORY).poolByPair(predicted, weth) == address(0)) break;
+        }
         FuseMeToken t = new FuseMeToken{salt: salt}(
             name, symbol, SUPPLY, MAX_WALLET_BPS, address(this), address(npm), router, address(locker), msg.sender
         );
